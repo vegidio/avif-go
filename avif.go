@@ -115,7 +115,7 @@ func decodeConfig(data []byte) (image.Config, error) {
 	if width == 0 || height == 0 {
 		return image.Config{}, fmt.Errorf("failed to get AVIF image config")
 	}
-	
+
 	// We assume an RGBA color model for simplicity.
 	return image.Config{
 		ColorModel: color.RGBAModel,
