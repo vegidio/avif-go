@@ -27,7 +27,7 @@ jobs:
     runs-on: macos-latest
     needs: [version]
     env:
-      MACOSX_DEPLOYMENT_TARGET: 15
+      MACOSX_DEPLOYMENT_TARGET: 14
     steps:
       - name: Code checkout
         uses: actions/checkout@v4

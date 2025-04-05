@@ -1,8 +1,8 @@
 package main
 
 import (
-	_ "avif-go"
 	"fmt"
+	_ "github.com/vegidio/avif-go"
 	"image"
 	"os"
 )
