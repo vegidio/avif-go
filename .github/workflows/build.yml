@@ -45,8 +45,8 @@ jobs:
 
       - name: Build libraries
         run: |
-          ./builder/vcpkg install "libavif[dav1d]:darwin-amd64-static"
-          ./builder/vcpkg install "libavif[dav1d]:darwin-arm64-static"
+          ./builder/vcpkg install "libavif[aom,dav1d]:darwin-amd64-static"
+          ./builder/vcpkg install "libavif[aom,dav1d]:darwin-arm64-static"
 
       - name: Zip binaries
         run: |
@@ -80,7 +80,7 @@ jobs:
 
       - name: Build libraries
         run: |
-          ./builder/vcpkg install "libavif[dav1d]:linux-amd64-static"
+          ./builder/vcpkg install "libavif[aom,dav1d]:linux-amd64-static"
 
       - name: Zip binaries
         run: |
@@ -112,7 +112,7 @@ jobs:
 
       - name: Build libraries
         run: |
-          ./builder/vcpkg install "libavif[dav1d]:linux-arm64-static"
+          ./builder/vcpkg install "libavif[aom,dav1d]:linux-arm64-static"
 
       - name: Zip binaries
         run: |
@@ -144,7 +144,7 @@ jobs:
 
       - name: Build libraries
         run: |
-          ./builder/vcpkg install "libavif[dav1d]:windows-amd64-static"
+          ./builder/vcpkg install "libavif[aom,dav1d]:windows-amd64-static"
 
       - name: Zip binaries
         run: |

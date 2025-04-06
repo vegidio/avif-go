@@ -9,6 +9,8 @@ package avif
 // decoder pointer for cleanup.
 avifImage* decode_avif_image(const uint8_t * data, size_t size, avifDecoder ** outDecoder) {
     avifDecoder* decoder = avifDecoderCreate();
+    // Force libavif to use the dav1d backend.
+    decoder->codecChoice = AVIF_CODEC_CHOICE_DAV1D;
     if (avifDecoderSetIOMemory(decoder, data, size) != AVIF_RESULT_OK) {
         avifDecoderDestroy(decoder);
         return NULL;
@@ -30,6 +32,8 @@ avifImage* decode_avif_image(const uint8_t * data, size_t size, avifDecoder ** o
 // Config-only decode: reads the header and returns width and height.
 void get_avif_config(const uint8_t * data, size_t size, uint32_t * width, uint32_t * height) {
     avifDecoder* decoder = avifDecoderCreate();
+    // Force libavif to use the dav1d backend.
+    decoder->codecChoice = AVIF_CODEC_CHOICE_DAV1D;
     if (avifDecoderSetIOMemory(decoder, data, size) != AVIF_RESULT_OK) {
          *width = 0;
          *height = 0;
@@ -54,6 +58,82 @@ import (
 	"image/color"
 	"unsafe"
 )
+
+func encodeAVIF(img image.RGBA) ([]byte, error) {
+	// Convert the image to RGBA
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			rgba.Set(x, y, img.At(x, y))
+		}
+	}
+	width := rgba.Bounds().Dx()
+	height := rgba.Bounds().Dy()
+
+	// Create an avifImage for the output.
+	// Here we use 8 bits per channel and the YUV420 pixel format.
+	avifImage := C.avifImageCreate(C.uint32_t(width), C.uint32_t(height), 8, C.AVIF_PIXEL_FORMAT_YUV420)
+	if avifImage == nil {
+		return nil, fmt.Errorf("failed to create AVIF image")
+	}
+
+	// Ensure the image memory is freed later.
+	defer C.avifImageDestroy(avifImage)
+
+	// Allocate avifRGBImage on the C heap to avoid passing a pointer to a Go-allocated variable.
+	rgb := (*C.avifRGBImage)(C.malloc(C.size_t(unsafe.Sizeof(C.avifRGBImage{}))))
+	if rgb == nil {
+		return nil, fmt.Errorf("failed to allocate avifRGBImage")
+	}
+
+	defer C.free(unsafe.Pointer(rgb))
+
+	// Set defaults and fill in the fields.
+	C.avifRGBImageSetDefaults(rgb, avifImage)
+	rgb.format = C.AVIF_RGB_FORMAT_RGBA
+	rgb.depth = 8
+	rgb.pixels = (*C.uint8_t)(unsafe.Pointer(&rgba.Pix[0]))
+
+	// Explicitly cast the stride to C.uint32_t.
+	rgb.rowBytes = C.uint32_t(rgba.Stride)
+
+	// Convert the RGB image to the YUV image required for AVIF
+	if C.avifImageRGBToYUV(avifImage, rgb) != C.AVIF_RESULT_OK {
+		return nil, fmt.Errorf("failed to convert image from RGB to YUV")
+	}
+
+	// Create an AVIF encoder instance.
+	encoder := C.avifEncoderCreate()
+	if encoder == nil {
+		return nil, fmt.Errorf("failed to create AVIF encoder")
+	}
+
+	// Make sure to clean up the encoder when done.
+	defer C.avifEncoderDestroy(encoder)
+
+	// Optionally, adjust encoder parameters.
+	// For example, here we set the maximum quantizer (lower value = higher quality).
+	encoder.minQuantizer = 0
+	encoder.maxQuantizer = 30
+
+	// Initialize an avifRWData structure to hold the encoded data.
+	var encodedData C.avifRWData
+	encodedData.data = nil
+	encodedData.size = 0
+
+	// Encode the image
+	result := C.avifEncoderWrite(encoder, avifImage, &encodedData)
+	if result != C.AVIF_RESULT_OK {
+		return nil, fmt.Errorf("failed to encode AVIF image")
+	}
+	// Ensure the allocated AVIF data is freed later
+	defer C.avifRWDataFree(&encodedData)
+
+	// Convert the C buffer to a Go byte slice
+	data := C.GoBytes(unsafe.Pointer(encodedData.data), C.int(encodedData.size))
+	return data, nil
+}
 
 func decodeAVIFToRGBA(data []byte) (*image.RGBA, error) {
 	// Allocate C memory and copy data.

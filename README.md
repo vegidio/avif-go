@@ -5,7 +5,7 @@
 Install `vcpkg` and run the command below to create the static library:
 
 ```bash
-MACOSX_DEPLOYMENT_TARGET=15.0 vcpkg install "libavif[dav1d]:arm64-osx-static"
+MACOSX_DEPLOYMENT_TARGET=14 vcpkg install "libavif[aom,dav1d]:darwin-arm64-static"
 ```
 
 Now you can build the Go binary with the command below:
