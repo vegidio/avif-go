@@ -16,20 +16,18 @@ func init() {
 	image.RegisterFormat("avif", "????ftypavis", Decode, DecodeConfig)
 }
 
-// Decode reads all data from r, decodes it using libavif, and returns an image.Image.
-// This function fully decodes the image into an *image.RGBA.
-func Decode(r io.Reader) (image.Image, error) {
-	data, err := io.ReadAll(r)
+// Decode reads all data from reader, decodes it using libavif, and returns an image.Image.
+func Decode(reader io.Reader) (image.Image, error) {
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode AVIF data: %w", err)
 	}
 	return decodeAVIFToRGBA(data)
 }
 
-// DecodeConfig reads enough of r to determine the image's configuration (dimensions, etc.).
-// Here we read the entire data and call a lightweight C function that only parses the header.
-func DecodeConfig(r io.Reader) (image.Config, error) {
-	data, err := io.ReadAll(r)
+// DecodeConfig reads enough of the reader to determine the image's configuration (dimensions, etc.).
+func DecodeConfig(reader io.Reader) (image.Config, error) {
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return image.Config{}, fmt.Errorf("failed get config of AVIF data: %w", err)
 	}

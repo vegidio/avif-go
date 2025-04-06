@@ -6,7 +6,10 @@ import (
 	"io"
 )
 
-func Encode(w io.Writer, img image.Image) error {
+// Encode encodes an image.Image to AVIF format and writes it to the provided io.Writer.
+//
+// If any error occurs during encoding or writing, it returns the error.
+func Encode(writer io.Writer, img image.Image) error {
 	// Convert the image to RGBA
 	bounds := img.Bounds()
 	rgba := image.NewRGBA(bounds)
@@ -17,11 +20,11 @@ func Encode(w io.Writer, img image.Image) error {
 	}
 
 	data, err := encodeAVIF(*rgba)
-	if _, err = w.Write(data); err != nil {
+	if _, err = writer.Write(data); err != nil {
 		return err
 	}
 
-	if _, err = w.Write(data); err != nil {
+	if _, err = writer.Write(data); err != nil {
 		return fmt.Errorf("failed to write AVIF image: %v", err)
 	}
 
