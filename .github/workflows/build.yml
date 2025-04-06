@@ -126,20 +126,16 @@ jobs:
           path: "*.zip"
 
   build-windows:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: [version]
     steps:
       - name: Code checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get install nasm gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
-
       - name: Install vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg builder
-          ./builder/bootstrap-vcpkg.sh
+          ./builder/bootstrap-vcpkg.bat
           cp vcpkg/windows-amd64-static.cmake builder/triplets/community
 
       - name: Build libraries
@@ -147,6 +143,7 @@ jobs:
           ./builder/vcpkg install "libavif[aom,dav1d]:windows-amd64-static"
 
       - name: Zip binaries
+        shell: bash
         run: |
           cd $GITHUB_WORKSPACE/builder/installed/windows-amd64-static/lib
           7z a -tzip -mx=9 $GITHUB_WORKSPACE/avif-go_windows-amd64.zip *.a
