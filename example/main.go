@@ -71,6 +71,6 @@ func decodeAvif(inputFile string) {
 	}
 
 	duration := time.Since(start)
-	fmt.Printf("Decoding completed in %s - decoded AVI image: %dx%d\n", duration, avifImage.Bounds().Dx(),
+	fmt.Printf("Decoding completed in %s - decoded AVIF image: %dx%d\n", duration, avifImage.Bounds().Dx(),
 		avifImage.Bounds().Dy())
 }
