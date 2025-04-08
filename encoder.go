@@ -5,12 +5,16 @@ import (
 	"image"
 	"image/draw"
 	"io"
+	"os"
 )
 
 // Encode encodes an image.Image to AVIF format and writes it to the provided io.Writer.
 //
 // If any error occurs during encoding or writing, it returns the error.
 func Encode(writer io.Writer, img image.Image) error {
+	// Disable SVT‑AV1 logs by setting the environment variable
+	os.Setenv("SVT_LOG", "-1")
+
 	// Convert the image to RGBA
 	bounds := img.Bounds()
 	rgba := image.NewRGBA(bounds)

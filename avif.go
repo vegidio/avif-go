@@ -60,13 +60,6 @@ import (
 )
 
 func encodeAVIF(rgba image.RGBA) ([]byte, error) {
-	// Disable SVT‑AV1 logs by forcing the log file to /dev/null
-	svtLogKey := C.CString("SVT_LOG_FILE")
-	svtLogValue := C.CString("/dev/null")
-	C.setenv(svtLogKey, svtLogValue, 1)
-	C.free(unsafe.Pointer(svtLogKey))
-	C.free(unsafe.Pointer(svtLogValue))
-
 	width := rgba.Bounds().Dx()
 	height := rgba.Bounds().Dy()
 
