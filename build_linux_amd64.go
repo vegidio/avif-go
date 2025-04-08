@@ -2,6 +2,6 @@ package avif
 
 /*
 #cgo CFLAGS: -I./include
-#cgo LDFLAGS: -L./libs/linux_amd64 -lavif -laom -ldav1d -ljpeg -lturbojpeg -lyuv -lm
+#cgo LDFLAGS: -L./libs/linux_amd64 -lavif -lsvtav1 -ldav1d -ljpeg -lturbojpeg -lyuv -lm
 */
 import "C"
