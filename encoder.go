@@ -3,6 +3,7 @@ package avif
 import (
 	"fmt"
 	"image"
+	"image/draw"
 	"io"
 )
 
@@ -13,11 +14,7 @@ func Encode(writer io.Writer, img image.Image) error {
 	// Convert the image to RGBA
 	bounds := img.Bounds()
 	rgba := image.NewRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			rgba.Set(x, y, img.At(x, y))
-		}
-	}
+	draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
 
 	data, err := encodeAVIF(*rgba)
 	if _, err = writer.Write(data); err != nil {

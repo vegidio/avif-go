@@ -59,15 +59,14 @@ import (
 	"unsafe"
 )
 
-func encodeAVIF(img image.RGBA) ([]byte, error) {
-	// Convert the image to RGBA
-	bounds := img.Bounds()
-	rgba := image.NewRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			rgba.Set(x, y, img.At(x, y))
-		}
-	}
+func encodeAVIF(rgba image.RGBA) ([]byte, error) {
+	// Disable SVT‑AV1 logs by forcing the log file to /dev/null
+	svtLogKey := C.CString("SVT_LOG_FILE")
+	svtLogValue := C.CString("/dev/null")
+	C.setenv(svtLogKey, svtLogValue, 1)
+	C.free(unsafe.Pointer(svtLogKey))
+	C.free(unsafe.Pointer(svtLogValue))
+
 	width := rgba.Bounds().Dx()
 	height := rgba.Bounds().Dy()
 
@@ -78,7 +77,7 @@ func encodeAVIF(img image.RGBA) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create AVIF image")
 	}
 
-	// Ensure the image memory is freed later.
+	// Ensure the image memory is freed later
 	defer C.avifImageDestroy(avifImage)
 
 	// Allocate avifRGBImage on the C heap to avoid passing a pointer to a Go-allocated variable.
@@ -95,7 +94,7 @@ func encodeAVIF(img image.RGBA) ([]byte, error) {
 	rgb.depth = 8
 	rgb.pixels = (*C.uint8_t)(unsafe.Pointer(&rgba.Pix[0]))
 
-	// Explicitly cast the stride to C.uint32_t.
+	// Explicitly cast the stride to C.uint32_t
 	rgb.rowBytes = C.uint32_t(rgba.Stride)
 
 	// Convert the RGB image to the YUV image required for AVIF
@@ -103,7 +102,7 @@ func encodeAVIF(img image.RGBA) ([]byte, error) {
 		return nil, fmt.Errorf("failed to convert image from RGB to YUV")
 	}
 
-	// Create an AVIF encoder instance.
+	// Create an AVIF encoder instance
 	encoder := C.avifEncoderCreate()
 	if encoder == nil {
 		return nil, fmt.Errorf("failed to create AVIF encoder")
@@ -112,8 +111,13 @@ func encodeAVIF(img image.RGBA) ([]byte, error) {
 	// Make sure to clean up the encoder when done.
 	defer C.avifEncoderDestroy(encoder)
 
-	// Optionally, adjust encoder parameters.
-	// For example, here we set the maximum quantizer (lower value = higher quality).
+	// Set SVT-AV1 as the backend.
+	encoder.codecChoice = C.AVIF_CODEC_CHOICE_SVT
+
+	// Optionally, adjust encoder parameters
+	encoder.speed = 6
+	encoder.quality = 60
+	encoder.qualityAlpha = 60
 	encoder.minQuantizer = 0
 	encoder.maxQuantizer = 30
 
