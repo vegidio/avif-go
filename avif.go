@@ -59,7 +59,7 @@ import (
 	"unsafe"
 )
 
-func encodeAVIF(rgba image.RGBA) ([]byte, error) {
+func encodeAVIF(rgba image.RGBA, options Options) ([]byte, error) {
 	width := rgba.Bounds().Dx()
 	height := rgba.Bounds().Dy()
 
@@ -108,11 +108,9 @@ func encodeAVIF(rgba image.RGBA) ([]byte, error) {
 	encoder.codecChoice = C.AVIF_CODEC_CHOICE_SVT
 
 	// Optionally, adjust encoder parameters
-	encoder.speed = 6
-	encoder.quality = 60
-	encoder.qualityAlpha = 60
-	encoder.minQuantizer = 0
-	encoder.maxQuantizer = 30
+	encoder.speed = C.int(options.Speed)
+	encoder.quality = C.int(options.ColorQuality)
+	encoder.qualityAlpha = C.int(options.AlphaQuality)
 
 	// Initialize an avifRWData structure to hold the encoded data.
 	var encodedData C.avifRWData

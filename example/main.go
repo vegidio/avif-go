@@ -43,7 +43,7 @@ func encodeAvif(inputFile, outputFile string) {
 
 	start := time.Now()
 
-	err = avif.Encode(avifFile, jpgImg)
+	err = avif.Encode(avifFile, jpgImg, nil)
 	if err != nil {
 		fmt.Println("failed to encode AVIF -", err)
 		return

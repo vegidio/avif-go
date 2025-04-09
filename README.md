@@ -38,7 +38,7 @@ For more complete examples, check the [example](example) folder.
 ```go
 var originalImage image.Image = ... // an image.Image to be encoded
 avifFile, err := os.Create("/path/to/image.avif") // create the file to save the AVIF
-err = avif.Encode(avifFile, originalImage) // encode the image and save it to the file
+err = avif.Encode(avifFile, originalImage, nil) // encode the image & save it to the file
 ```
 
 ### Decoding
