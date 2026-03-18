@@ -47,6 +47,15 @@ avifFile, err := os.Create("/path/to/image.avif") // create the file to save the
 err = avif.Encode(avifFile, originalImage, nil) // encode the image & save it to the file
 ```
 
+#### Encoding Animation
+
+```go
+var frames []image.Image = ... // a slice of image.Image frames
+avifFile, err := os.Create("/path/to/animation.avif") // create the file to save the animated AVIF
+a := &avif.AVIF{Image: frames, Delay: []int{10, 10, 10}, LoopCount: 0} // 100ms per frame, loop forever
+err = avif.EncodeAll(avifFile, a, nil) // encode the animation & save it to the file
+```
+
 #### Decoding
 
 ```go

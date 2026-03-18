@@ -158,6 +158,72 @@ func encodeAVIF(rgba image.RGBA, options Options) ([]byte, error) {
 	return data, nil
 }
 
+// encodeAnimatedAVIF encodes multiple RGBA frames into an animated AVIF sequence.
+//
+// Each frame is encoded with its corresponding delay (in milliseconds).
+// repetitionCount controls looping: -1 for infinite, 0 for play once, N for N+1 plays.
+func encodeAnimatedAVIF(frames []image.RGBA, delaysMs []int, repetitionCount int, options Options) ([]byte, error) {
+	if len(frames) == 0 {
+		return nil, fmt.Errorf("at least one frame is required")
+	}
+
+	// Create encoder
+	encoder := C.avifEncoderCreate()
+	if encoder == nil {
+		return nil, fmt.Errorf("failed to create AVIF encoder")
+	}
+	defer C.avifEncoderDestroy(encoder)
+
+	encoder.codecChoice = C.AVIF_CODEC_CHOICE_SVT
+	encoder.speed = C.int(options.Speed)
+	encoder.quality = C.int(options.ColorQuality)
+	encoder.qualityAlpha = C.int(options.AlphaQuality)
+	encoder.timescale = C.uint64_t(1000) // millisecond units
+	encoder.repetitionCount = C.int(repetitionCount)
+
+	// Add each frame
+	for i, frame := range frames {
+		width := frame.Bounds().Dx()
+		height := frame.Bounds().Dy()
+		stride := width * 4
+		pixels := make([]byte, height*stride)
+
+		for y := 0; y < height; y++ {
+			srcOffset := y * frame.Stride
+			dstOffset := y * stride
+			copy(pixels[dstOffset:dstOffset+stride], frame.Pix[srcOffset:srcOffset+stride])
+		}
+
+		avifImage, err := createAVIFTile(pixels, width, height, stride, 0, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create AVIF image for frame %d: %w", i, err)
+		}
+
+		result := C.avifEncoderAddImage(encoder, avifImage, C.uint64_t(delaysMs[i]), C.AVIF_ADD_IMAGE_FLAG_NONE)
+		C.avifImageDestroy(avifImage)
+
+		if result != C.AVIF_RESULT_OK {
+			errStr := C.GoString(C.get_error_string(result))
+			return nil, fmt.Errorf("failed to add frame %d: %s", i, errStr)
+		}
+	}
+
+	// Finish encoding
+	var encodedData C.avifRWData
+	encodedData.data = nil
+	encodedData.size = 0
+
+	result := C.avifEncoderFinish(encoder, &encodedData)
+	if result != C.AVIF_RESULT_OK {
+		errStr := C.GoString(C.get_error_string(result))
+		return nil, fmt.Errorf("failed to finish encoding: %s", errStr)
+	}
+	defer C.avifRWDataFree(&encodedData)
+
+	data := C.GoBytes(unsafe.Pointer(encodedData.data), C.int(encodedData.size))
+	return data, nil
+}
+
 // createTiles splits the input RGBA image into tiles and converts them to AVIF format.
 // Returns a slice of avifImage pointers that must be freed by the caller.
 func createTiles(rgba image.RGBA, tileWidth, tileHeight int) ([]*C.avifImage, error) {
