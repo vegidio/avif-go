@@ -41,33 +41,14 @@ type AVIF struct {
 // Returns:
 //   - An error if encoding or writing fails, otherwise nil.
 func Encode(writer io.Writer, img image.Image, options *Options) error {
-	// Set default values for options if they are not set
-	if options == nil {
-		options = &Options{Speed: 6, AlphaQuality: 60, ColorQuality: 60}
+	opts, err := normalizeOptions(options)
+	if err != nil {
+		return err
 	}
 
-	// Validate options before doing any expensive work
-	if options.Speed < 0 || options.Speed > 10 {
-		return fmt.Errorf("speed must be between 0 and 10")
-	}
-	if options.AlphaQuality < 0 || options.AlphaQuality > 100 {
-		return fmt.Errorf("alpha quality must be between 0 and 100")
-	}
-	if options.ColorQuality < 0 || options.ColorQuality > 100 {
-		return fmt.Errorf("color quality must be between 0 and 100")
-	}
+	rgba := toRGBA(img)
 
-	// Convert the image to RGBA, skipping if it already is
-	var rgba *image.RGBA
-	if r, ok := img.(*image.RGBA); ok {
-		rgba = r
-	} else {
-		bounds := img.Bounds()
-		rgba = image.NewRGBA(bounds)
-		draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
-	}
-
-	data, err := encodeAVIF(*rgba, *options)
+	data, err := encodeAVIF(*rgba, opts)
 	if err != nil {
 		return err
 	}
@@ -98,20 +79,9 @@ func EncodeAll(writer io.Writer, a *AVIF, options *Options) error {
 		return Encode(writer, a.Image[0], options)
 	}
 
-	// Set default values for options if they are not set
-	if options == nil {
-		options = &Options{Speed: 6, AlphaQuality: 60, ColorQuality: 60}
-	}
-
-	// Validate options
-	if options.Speed < 0 || options.Speed > 10 {
-		return fmt.Errorf("speed must be between 0 and 10")
-	}
-	if options.AlphaQuality < 0 || options.AlphaQuality > 100 {
-		return fmt.Errorf("alpha quality must be between 0 and 100")
-	}
-	if options.ColorQuality < 0 || options.ColorQuality > 100 {
-		return fmt.Errorf("color quality must be between 0 and 100")
+	opts, err := normalizeOptions(options)
+	if err != nil {
+		return err
 	}
 
 	// Convert frames to RGBA and delays to milliseconds
@@ -119,14 +89,7 @@ func EncodeAll(writer io.Writer, a *AVIF, options *Options) error {
 	delaysMs := make([]int, len(a.Image))
 
 	for i, img := range a.Image {
-		if r, ok := img.(*image.RGBA); ok {
-			rgbaFrames[i] = *r
-		} else {
-			bounds := img.Bounds()
-			rgba := image.NewRGBA(bounds)
-			draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
-			rgbaFrames[i] = *rgba
-		}
+		rgbaFrames[i] = *toRGBA(img)
 
 		// Convert delay from centiseconds to milliseconds; treat 0 as 100ms (GIF default)
 		delay := 10
@@ -144,7 +107,7 @@ func EncodeAll(writer io.Writer, a *AVIF, options *Options) error {
 		repetitionCount = a.LoopCount
 	}
 
-	data, err := encodeAnimatedAVIF(rgbaFrames, delaysMs, repetitionCount, *options)
+	data, err := encodeAnimatedAVIF(rgbaFrames, delaysMs, repetitionCount, opts)
 	if err != nil {
 		return err
 	}
@@ -155,3 +118,38 @@ func EncodeAll(writer io.Writer, a *AVIF, options *Options) error {
 
 	return nil
 }
+
+// region - Private functions
+
+// normalizeOptions applies defaults and validates encoding options.
+func normalizeOptions(options *Options) (Options, error) {
+	if options == nil {
+		return Options{Speed: 6, AlphaQuality: 60, ColorQuality: 60}, nil
+	}
+
+	if options.Speed < 0 || options.Speed > 10 {
+		return Options{}, fmt.Errorf("speed must be between 0 and 10")
+	}
+	if options.AlphaQuality < 0 || options.AlphaQuality > 100 {
+		return Options{}, fmt.Errorf("alpha quality must be between 0 and 100")
+	}
+	if options.ColorQuality < 0 || options.ColorQuality > 100 {
+		return Options{}, fmt.Errorf("color quality must be between 0 and 100")
+	}
+
+	return *options, nil
+}
+
+// toRGBA converts an image.Image to *image.RGBA, returning it directly if it already is one.
+func toRGBA(img image.Image) *image.RGBA {
+	if r, ok := img.(*image.RGBA); ok {
+		return r
+	}
+
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
+	return rgba
+}
+
+// endregion
