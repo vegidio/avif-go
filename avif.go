@@ -78,6 +78,12 @@ import (
 	"unsafe"
 )
 
+// Maximum tile dimensions supported by the SVT-AV1 encoder.
+const (
+	maxTileWidth  = 16384
+	maxTileHeight = 8704
+)
+
 // encodeAVIF encodes an RGBA image to AVIF format.
 //
 // Speed ranges from 0 (slowest, best quality) to 10 (fastest, lower quality).
@@ -94,9 +100,8 @@ func encodeAVIF(rgba image.RGBA, options Options) ([]byte, error) {
 		return nil, fmt.Errorf("invalid image dimensions: %dx%d", width, height)
 	}
 
-	// Calculate tile dimensions - use max dimensions supported by SVT-AV1
-	tileWidth := 16384
-	tileHeight := 8704
+	tileWidth := maxTileWidth
+	tileHeight := maxTileHeight
 
 	// Calculate the number of tiles needed (1x1 for images within limits)
 	cols := (width + tileWidth - 1) / tileWidth
@@ -165,9 +170,10 @@ func createTiles(rgba image.RGBA, tileWidth, tileHeight int) ([]*C.avifImage, er
 	// Pre-allocate slice with exact capacity
 	cellImages := make([]*C.avifImage, 0, cols*rows)
 
-	// Pre-allocate tile buffer once and reuse
-	maxTileSize := tileWidth * tileHeight * 4
-	tileBuffer := make([]byte, maxTileSize)
+	// Pre-allocate tile buffer once and reuse, sized to actual needs
+	actualTileW := min(tileWidth, width)
+	actualTileH := min(tileHeight, height)
+	tileBuffer := make([]byte, actualTileW*actualTileH*4)
 
 	for row := 0; row < rows; row++ {
 		for col := 0; col < cols; col++ {

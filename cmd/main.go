@@ -58,16 +58,15 @@ func main() {
 					},
 				},
 				Action: func(ctx context.Context, command *cli.Command) error {
-					input := command.Args().First()
-					output := command.Args().Tail()[0]
-
-					if len(input) == 0 {
+					if command.Args().Len() < 1 {
 						return fmt.Errorf("missing input file")
 					}
-
-					if len(output) == 0 {
+					if command.Args().Len() < 2 {
 						return fmt.Errorf("missing output file")
 					}
+
+					input := command.Args().First()
+					output := command.Args().Tail()[0]
 
 					options := &avif.Options{
 						Speed:        int(speed),
@@ -92,16 +91,15 @@ func main() {
 				Usage:     "decode an AVIF image to a different format",
 				UsageText: "avif dec <input> <output>",
 				Action: func(ctx context.Context, command *cli.Command) error {
-					input := command.Args().First()
-					output := command.Args().Tail()[0]
-
-					if len(input) == 0 {
+					if command.Args().Len() < 1 {
 						return fmt.Errorf("missing input file")
 					}
-
-					if len(output) == 0 {
+					if command.Args().Len() < 2 {
 						return fmt.Errorf("missing output file")
 					}
+
+					input := command.Args().First()
+					output := command.Args().Tail()[0]
 
 					now := time.Now()
 					img, info, err := decodeAvif(input, output)

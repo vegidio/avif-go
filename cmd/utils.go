@@ -4,22 +4,16 @@ import (
 	"fmt"
 	"image"
 	"image/gif"
-	_ "image/gif"
 	"image/jpeg"
-	_ "image/jpeg"
 	"image/png"
-	_ "image/png"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/vegidio/avif-go"
-	_ "github.com/vegidio/avif-go"
 	"golang.org/x/image/bmp"
-	_ "golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
-	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 )
 

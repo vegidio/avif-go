@@ -28,16 +28,12 @@ type Options struct {
 // Returns:
 //   - An error if encoding or writing fails, otherwise nil.
 func Encode(writer io.Writer, img image.Image, options *Options) error {
-	// Convert the image to RGBA
-	bounds := img.Bounds()
-	rgba := image.NewRGBA(bounds)
-	draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
-
 	// Set default values for options if they are not set
 	if options == nil {
 		options = &Options{Speed: 6, AlphaQuality: 60, ColorQuality: 60}
 	}
 
+	// Validate options before doing any expensive work
 	if options.Speed < 0 || options.Speed > 10 {
 		return fmt.Errorf("speed must be between 0 and 10")
 	}
@@ -48,13 +44,23 @@ func Encode(writer io.Writer, img image.Image, options *Options) error {
 		return fmt.Errorf("color quality must be between 0 and 100")
 	}
 
+	// Convert the image to RGBA, skipping if it already is
+	var rgba *image.RGBA
+	if r, ok := img.(*image.RGBA); ok {
+		rgba = r
+	} else {
+		bounds := img.Bounds()
+		rgba = image.NewRGBA(bounds)
+		draw.Draw(rgba, rgba.Bounds(), img, bounds.Min, draw.Src)
+	}
+
 	data, err := encodeAVIF(*rgba, *options)
 	if err != nil {
 		return err
 	}
 
 	if _, err = writer.Write(data); err != nil {
-		return fmt.Errorf("failed to write AVIF image: %v", err)
+		return fmt.Errorf("failed to write AVIF image: %w", err)
 	}
 
 	return nil

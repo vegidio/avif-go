@@ -34,7 +34,7 @@ func Decode(reader io.Reader) (image.Image, error) {
 func DecodeConfig(reader io.Reader) (image.Config, error) {
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return image.Config{}, fmt.Errorf("failed get config of AVIF data: %w", err)
+		return image.Config{}, fmt.Errorf("failed to get config of AVIF data: %w", err)
 	}
 
 	return decodeConfig(data)

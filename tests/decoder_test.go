@@ -151,7 +151,7 @@ func TestDecodeConfig(t *testing.T) {
 		config, err := avif.DecodeConfig(errReader)
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed get config of AVIF data")
+		assert.Contains(t, err.Error(), "failed to get config of AVIF data")
 		assert.Equal(t, 0, config.Width)
 		assert.Equal(t, 0, config.Height)
 	})
