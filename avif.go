@@ -1,4 +1,4 @@
-// Package avif is a Go library and CLI tool to encode/decode AVIF images without system dependencies (CGO).
+// Package avif is a Go library & CLI tool to encode/decode static and animated AVIF without external dependencies.
 package avif
 
 /*
@@ -10,43 +10,10 @@ const char* get_error_string(avifResult result) {
     return avifResultToString(result);
 }
 
-// Full decode: creates a decoder, sets up the memory I/O, and decodes the image.
-// Returns the avifImage pointer (which contains width, height, etc.) and leaves the
-// decoder pointer for cleanup. Returns error result via outResult.
-avifImage* decode_avif_image(const uint8_t * data, size_t size, avifDecoder ** outDecoder, avifResult *outResult) {
-    avifDecoder* decoder = avifDecoderCreate();
-    // Force libavif to use the dav1d backend.
-    decoder->codecChoice = AVIF_CODEC_CHOICE_DAV1D;
-
-    *outResult = avifDecoderSetIOMemory(decoder, data, size);
-    if (*outResult != AVIF_RESULT_OK) {
-        avifDecoderDestroy(decoder);
-        return NULL;
-    }
-
-    *outResult = avifDecoderParse(decoder);
-    if (*outResult != AVIF_RESULT_OK) {
-        avifDecoderDestroy(decoder);
-        return NULL;
-    }
-
-    *outResult = avifDecoderNextImage(decoder);
-    if (*outResult != AVIF_RESULT_OK) {
-        avifDecoderDestroy(decoder);
-        return NULL;
-    }
-
-    if (outDecoder) {
-        *outDecoder = decoder;
-    }
-    return decoder->image;
-}
-
 // Config-only decode: reads the header and returns width and height.
 // Returns error result via outResult.
 void get_avif_config(const uint8_t * data, size_t size, uint32_t * width, uint32_t * height, avifResult *outResult) {
     avifDecoder* decoder = avifDecoderCreate();
-    // Force libavif to use the dav1d backend.
     decoder->codecChoice = AVIF_CODEC_CHOICE_DAV1D;
 
     *outResult = avifDecoderSetIOMemory(decoder, data, size);
@@ -321,42 +288,94 @@ func createAVIFTile(pixels []byte, width, height, stride, col, row int) (*C.avif
 	return avifImage, nil
 }
 
-// decodeAVIFToRGBA decodes AVIF image data to an RGBA image.
+// decodeAVIFToRGBA decodes the first frame of AVIF image data to an RGBA image.
 func decodeAVIFToRGBA(data []byte) (*image.RGBA, error) {
+	frames, _, _, err := decodeAllAVIFToRGBA(data)
+	if err != nil {
+		return nil, err
+	}
+	return frames[0], nil
+}
+
+// decodeAllAVIFToRGBA decodes all frames from an AVIF image sequence.
+// Returns the frames as RGBA images, delays in centiseconds, and the repetition count.
+func decodeAllAVIFToRGBA(data []byte) ([]*image.RGBA, []int, int, error) {
 	if len(data) == 0 {
-		return nil, fmt.Errorf("cannot decode empty data")
+		return nil, nil, 0, fmt.Errorf("cannot decode empty data")
 	}
 
-	// Allocate C memory and copy data.
 	cData := C.CBytes(data)
 	defer C.free(cData)
 
-	var decoder *C.avifDecoder
-	var result C.avifResult
-	avifImg := C.decode_avif_image((*C.uint8_t)(cData), C.size_t(len(data)), &decoder, &result)
-	if avifImg == nil {
-		errStr := C.GoString(C.get_error_string(result))
-		return nil, fmt.Errorf("failed to decode AVIF image: %s", errStr)
+	// Create and configure decoder
+	decoder := C.avifDecoderCreate()
+	if decoder == nil {
+		return nil, nil, 0, fmt.Errorf("failed to create AVIF decoder")
 	}
 	defer C.avifDecoderDestroy(decoder)
 
-	// Set up an avifRGBImage struct to hold the converted image.
+	decoder.codecChoice = C.AVIF_CODEC_CHOICE_DAV1D
+
+	result := C.avifDecoderSetIOMemory(decoder, (*C.uint8_t)(cData), C.size_t(len(data)))
+	if result != C.AVIF_RESULT_OK {
+		errStr := C.GoString(C.get_error_string(result))
+		return nil, nil, 0, fmt.Errorf("failed to set decoder I/O: %s", errStr)
+	}
+
+	result = C.avifDecoderParse(decoder)
+	if result != C.AVIF_RESULT_OK {
+		errStr := C.GoString(C.get_error_string(result))
+		return nil, nil, 0, fmt.Errorf("failed to parse AVIF: %s", errStr)
+	}
+
+	frameCount := int(decoder.imageCount)
+	repetitionCount := int(decoder.repetitionCount)
+
+	frames := make([]*image.RGBA, 0, frameCount)
+	delays := make([]int, 0, frameCount)
+
+	for i := 0; i < frameCount; i++ {
+		result = C.avifDecoderNextImage(decoder)
+		if result != C.AVIF_RESULT_OK {
+			errStr := C.GoString(C.get_error_string(result))
+			return nil, nil, 0, fmt.Errorf("failed to decode frame %d: %s", i, errStr)
+		}
+
+		img, err := avifImageToRGBA(decoder.image)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("frame %d: %w", i, err)
+		}
+		frames = append(frames, img)
+
+		// Get frame timing and convert to centiseconds
+		var timing C.avifImageTiming
+		C.avifDecoderNthImageTiming(decoder, C.uint32_t(i), &timing)
+		delay := 0
+		if timing.timescale > 0 {
+			delay = int(timing.durationInTimescales * 100 / timing.timescale)
+		}
+		delays = append(delays, delay)
+	}
+
+	return frames, delays, repetitionCount, nil
+}
+
+// avifImageToRGBA converts a C avifImage (YUV) to a Go image.RGBA.
+func avifImageToRGBA(avifImg *C.avifImage) (*image.RGBA, error) {
 	var rgb C.avifRGBImage
 	C.avifRGBImageSetDefaults(&rgb, avifImg)
 	rgb.format = C.AVIF_RGB_FORMAT_RGBA
-	rgb.depth = 8 // 8-bit per channel
+	rgb.depth = 8
 
-	// Allocate pixel buffer for the RGB data.
 	if C.avifRGBImageAllocatePixels(&rgb) != C.AVIF_RESULT_OK {
 		return nil, fmt.Errorf("failed to allocate RGB pixels")
 	}
 	defer C.avifRGBImageFreePixels(&rgb)
 
-	// Convert the image from YUV to RGB.
-	result = C.avifImageYUVToRGB(avifImg, &rgb)
+	result := C.avifImageYUVToRGB(avifImg, &rgb)
 	if result != C.AVIF_RESULT_OK {
 		errStr := C.GoString(C.get_error_string(result))
-		return nil, fmt.Errorf("failed to convert image to RGB: %s", errStr)
+		return nil, fmt.Errorf("failed to convert YUV to RGB: %s", errStr)
 	}
 
 	width := int(avifImg.width)
@@ -364,8 +383,6 @@ func decodeAVIFToRGBA(data []byte) (*image.RGBA, error) {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	rowBytes := int(rgb.rowBytes)
 
-	// Copy the pixel data row by row into the Go image using direct pointer access.
-	// This avoids the extra allocation from C.GoBytes for the entire buffer.
 	for y := 0; y < height; y++ {
 		srcPtr := unsafe.Add(unsafe.Pointer(rgb.pixels), y*rowBytes)
 		dstOffset := y * img.Stride

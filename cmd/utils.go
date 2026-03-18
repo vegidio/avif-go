@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/color/palette"
 	"image/draw"
 	"image/gif"
 	"image/jpeg"
@@ -177,10 +178,10 @@ func decodeAvif(input, output string) (image.Image, os.FileInfo, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-
 	defer inputFile.Close()
 
-	img, _, err := image.Decode(inputFile)
+	// Decode all frames from the AVIF
+	a, err := avif.DecodeAll(inputFile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -189,20 +190,40 @@ func decodeAvif(input, output string) (image.Image, os.FileInfo, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-
 	defer outputFile.Close()
 
-	switch ext {
-	case ".bmp":
-		err = bmp.Encode(outputFile, img)
-	case ".gif":
-		err = gif.Encode(outputFile, img, nil)
-	case ".jpg", ".jpeg":
-		err = jpeg.Encode(outputFile, img, nil)
-	case ".png":
-		err = png.Encode(outputFile, img)
-	case ".tiff":
-		err = tiff.Encode(outputFile, img, nil)
+	// Animated AVIF → animated GIF
+	if ext == ".gif" && len(a.Image) > 1 {
+		g := &gif.GIF{
+			LoopCount: a.LoopCount,
+			Delay:     a.Delay,
+			Image:     make([]*image.Paletted, len(a.Image)),
+		}
+
+		for i, frame := range a.Image {
+			bounds := frame.Bounds()
+			paletted := image.NewPaletted(bounds, palette.Plan9)
+			draw.FloydSteinberg.Draw(paletted, bounds, frame, bounds.Min)
+			g.Image[i] = paletted
+		}
+
+		err = gif.EncodeAll(outputFile, g)
+	} else {
+		// Single frame or non-GIF output: use first frame
+		img := a.Image[0]
+
+		switch ext {
+		case ".bmp":
+			err = bmp.Encode(outputFile, img)
+		case ".gif":
+			err = gif.Encode(outputFile, img, nil)
+		case ".jpg", ".jpeg":
+			err = jpeg.Encode(outputFile, img, nil)
+		case ".png":
+			err = png.Encode(outputFile, img)
+		case ".tiff":
+			err = tiff.Encode(outputFile, img, nil)
+		}
 	}
 
 	if err != nil {
@@ -214,5 +235,5 @@ func decodeAvif(input, output string) (image.Image, os.FileInfo, error) {
 		return nil, nil, err
 	}
 
-	return img, info, nil
+	return a.Image[0], info, nil
 }

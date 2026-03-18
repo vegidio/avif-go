@@ -5,6 +5,8 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/gif"
 	_ "image/jpeg" // Register JPEG format
 	"os"
 	"testing"
@@ -176,6 +178,117 @@ func TestEncode_WithRealImage(t *testing.T) {
 	} else {
 		t.Skip("assets/image.jpg not found, skipping real image test")
 	}
+}
+
+func TestEncodeAll_MultiFrame(t *testing.T) {
+	frames := make([]image.Image, 3)
+	for i := range frames {
+		img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+		for y := 0; y < 10; y++ {
+			for x := 0; x < 10; x++ {
+				img.Set(x, y, color.RGBA{R: uint8(i * 80), G: 100, B: 200, A: 255})
+			}
+		}
+		frames[i] = img
+	}
+
+	a := &avif.AVIF{
+		Image:     frames,
+		Delay:     []int{10, 10, 10},
+		LoopCount: 0,
+	}
+
+	buf := &bytes.Buffer{}
+	err := avif.EncodeAll(buf, a, nil)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.Bytes())
+}
+
+func TestEncodeAll_SingleFrame(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+
+	a := &avif.AVIF{
+		Image:     []image.Image{img},
+		Delay:     []int{10},
+		LoopCount: 0,
+	}
+
+	buf := &bytes.Buffer{}
+	err := avif.EncodeAll(buf, a, nil)
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.Bytes())
+}
+
+func TestEncodeAll_EmptyFrames(t *testing.T) {
+	a := &avif.AVIF{
+		Image: []image.Image{},
+	}
+
+	buf := &bytes.Buffer{}
+	err := avif.EncodeAll(buf, a, nil)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one frame is required")
+}
+
+func TestEncodeAll_Validation(t *testing.T) {
+	frames := []image.Image{
+		image.NewRGBA(image.Rect(0, 0, 10, 10)),
+		image.NewRGBA(image.Rect(0, 0, 10, 10)),
+	}
+
+	a := &avif.AVIF{
+		Image: frames,
+		Delay: []int{10, 10},
+	}
+
+	buf := &bytes.Buffer{}
+	err := avif.EncodeAll(buf, a, &avif.Options{Speed: 11})
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "speed must be between 0 and 10")
+}
+
+func TestEncodeAll_WithRealGIF(t *testing.T) {
+	if _, err := os.Stat("../assets/spider.gif"); err != nil {
+		t.Skip("assets/spider.gif not found, skipping real GIF test")
+	}
+
+	file, err := os.Open("../assets/spider.gif")
+	require.NoError(t, err)
+	defer file.Close()
+
+	gifData, err := gif.DecodeAll(file)
+	require.NoError(t, err)
+	require.Greater(t, len(gifData.Image), 1, "spider.gif should have multiple frames")
+
+	// Build AVIF struct from GIF frames with proper full-canvas compositing
+	canvasWidth := gifData.Config.Width
+	canvasHeight := gifData.Config.Height
+	canvas := image.NewRGBA(image.Rect(0, 0, canvasWidth, canvasHeight))
+
+	frames := make([]image.Image, len(gifData.Image))
+	for i, frame := range gifData.Image {
+		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
+		cloned := image.NewRGBA(image.Rect(0, 0, canvasWidth, canvasHeight))
+		copy(cloned.Pix, canvas.Pix)
+		frames[i] = cloned
+	}
+
+	a := &avif.AVIF{
+		Image:     frames,
+		Delay:     gifData.Delay,
+		LoopCount: gifData.LoopCount,
+	}
+
+	buf := &bytes.Buffer{}
+	err = avif.EncodeAll(buf, a, &avif.Options{Speed: 10})
+
+	assert.NoError(t, err)
+	assert.NotEmpty(t, buf.Bytes())
+	t.Logf("Encoded %d frames to %d bytes", len(frames), buf.Len())
 }
 
 // errorWriter is a helper type that always returns an error on Write

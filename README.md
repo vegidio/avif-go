@@ -1,6 +1,6 @@
 # avif-go
 
-A Go library and CLI tool to encode/decode AVIF images without system dependencies (CGO).
+A Go library & CLI tool to encode/decode static and animated AVIF without external dependencies.
 
 ## 💡 Motivation
 
@@ -8,6 +8,7 @@ There are a couple of libraries to encode/decode AVIF images in Go, and even tho
 
 - They need dependencies to be installed on the system to either build the app or later execute it.
 - They rely on a WASM runtime - which is actually a really smart idea! - but it has a big impact on performance.
+- There's currently no Go library capable of encoding animated AVIFs; this library aims to fill that gap.
 
 **avif-go** uses CGO to create a static implementation of AVIF, so you don't need `libavif` (or any of its sub-dependencies) installed to build or run your Go application.
 
@@ -51,8 +52,8 @@ err = avif.Encode(avifFile, originalImage, nil) // encode the image & save it to
 
 ```go
 var frames []image.Image = ... // a slice of image.Image frames
-avifFile, err := os.Create("/path/to/animation.avif") // create the file to save the animated AVIF
-a := &avif.AVIF{Image: frames, Delay: []int{10, 10, 10}, LoopCount: 0} // 100ms per frame, loop forever
+avifFile, err := os.Create("/path/to/animation.avif") // create file to save the animation
+a := &avif.AVIF{Image: frames, Delay: []int{10, 10, 10}, LoopCount: 0} // anim configuration
 err = avif.EncodeAll(avifFile, a, nil) // encode the animation & save it to the file
 ```
 
@@ -63,6 +64,16 @@ import _ "github.com/vegidio/avif-go" // do a blank import to register the AVIF 
 avifFile, err := os.Open("/path/to/image.avif") // open the AVIF file to be decoded
 avifImage, _, err := image.Decode(avifFile) // decode the image
 ```
+
+#### Decoding Animation
+
+```go
+avifFile, err := os.Open("/path/to/animation.avif") // open the animated AVIF file
+a, err := avif.DecodeAll(avifFile) // decode all frames
+// a.Image contains the frames, a.Delay the timing, a.LoopCount the loop behavior
+```
+
+For more examples on how to use this library, you can check the [cmd/](cmd) directory.
 
 ### CLI
 

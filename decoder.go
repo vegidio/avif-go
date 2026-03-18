@@ -27,6 +27,42 @@ func Decode(reader io.Reader) (image.Image, error) {
 	return decodeAVIFToRGBA(data)
 }
 
+// DecodeAll reads AVIF data from the provided io.Reader and decodes all frames into an AVIF struct.
+//
+// For still images, the returned AVIF struct will contain a single frame.
+// For image sequences (animations), it will contain all frames with their timing and loop information.
+func DecodeAll(reader io.Reader) (*AVIF, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode AVIF data: %w", err)
+	}
+
+	frames, delays, repetitionCount, err := decodeAllAVIFToRGBA(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert []*image.RGBA to []image.Image
+	images := make([]image.Image, len(frames))
+	for i, f := range frames {
+		images[i] = f
+	}
+
+	// Map AVIF repetitionCount to LoopCount (inverse of EncodeAll mapping)
+	loopCount := 0 // default: infinite
+	if repetitionCount == 0 {
+		loopCount = -1 // play once
+	} else if repetitionCount > 0 {
+		loopCount = repetitionCount
+	}
+
+	return &AVIF{
+		Image:     images,
+		Delay:     delays,
+		LoopCount: loopCount,
+	}, nil
+}
+
 // DecodeConfig reads the configuration of an AVIF image from the provided io.Reader.
 //
 // It returns an image.Config containing the width, height, and color model of the image, or an error if the

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"image"
+	"image/color"
 	_ "image/jpeg"
 	"os"
 	"testing"
@@ -209,6 +210,87 @@ func TestMultipleFormats(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "jpeg", jpegFormat)
 		assert.NotNil(t, jpegImg)
+	})
+}
+
+func TestDecodeAll(t *testing.T) {
+	t.Run("animated AVIF", func(t *testing.T) {
+		if _, err := os.Stat("../assets/spider.avif"); err != nil {
+			t.Skip("assets/spider.avif not found, skipping test")
+		}
+
+		file, err := os.Open("../assets/spider.avif")
+		require.NoError(t, err)
+		defer file.Close()
+
+		a, err := avif.DecodeAll(file)
+
+		require.NoError(t, err)
+		assert.Greater(t, len(a.Image), 1, "should have multiple frames")
+		assert.Equal(t, len(a.Image), len(a.Delay), "frames and delays should match")
+
+		for i, delay := range a.Delay {
+			assert.Greater(t, delay, 0, "frame %d delay should be > 0", i)
+		}
+
+		t.Logf("Decoded %d frames, LoopCount=%d", len(a.Image), a.LoopCount)
+	})
+
+	t.Run("still AVIF", func(t *testing.T) {
+		if _, err := os.Stat("../assets/image.avif"); err != nil {
+			t.Skip("assets/image.avif not found, skipping test")
+		}
+
+		file, err := os.Open("../assets/image.avif")
+		require.NoError(t, err)
+		defer file.Close()
+
+		a, err := avif.DecodeAll(file)
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(a.Image), "still image should have 1 frame")
+		assert.Equal(t, 1, len(a.Delay))
+	})
+
+	t.Run("round-trip animated", func(t *testing.T) {
+		// Create a synthetic 3-frame animation
+		frames := make([]image.Image, 3)
+		for i := range frames {
+			img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+			for y := 0; y < 16; y++ {
+				for x := 0; x < 16; x++ {
+					img.Set(x, y, color.RGBA{R: uint8(i * 80), G: 100, B: 200, A: 255})
+				}
+			}
+			frames[i] = img
+		}
+
+		original := &avif.AVIF{
+			Image:     frames,
+			Delay:     []int{10, 20, 30},
+			LoopCount: 0,
+		}
+
+		// Encode
+		buf := &bytes.Buffer{}
+		err := avif.EncodeAll(buf, original, &avif.Options{Speed: 10})
+		require.NoError(t, err)
+
+		// Decode back
+		decoded, err := avif.DecodeAll(bytes.NewReader(buf.Bytes()))
+		require.NoError(t, err)
+
+		assert.Equal(t, len(original.Image), len(decoded.Image), "frame count should match")
+		assert.Equal(t, len(original.Delay), len(decoded.Delay), "delay count should match")
+		assert.Equal(t, original.LoopCount, decoded.LoopCount, "loop count should match")
+	})
+
+	t.Run("empty data", func(t *testing.T) {
+		reader := bytes.NewReader([]byte{})
+		a, err := avif.DecodeAll(reader)
+
+		assert.Error(t, err)
+		assert.Nil(t, a)
 	})
 }
 
