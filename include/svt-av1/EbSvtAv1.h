@@ -19,13 +19,14 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 #include "EbSvtAv1Formats.h"
+#include "EbConfigMacros.h"
 #include "EbDebugMacros.h"
 
 struct SvtMetadataArray;
 
 // API Version
 #define SVT_AV1_VERSION_MAJOR 3
-#define SVT_AV1_VERSION_MINOR 0
+#define SVT_AV1_VERSION_MINOR 1
 #define SVT_AV1_VERSION_PATCHLEVEL 2
 
 #define SVT_AV1_CHECK_VERSION(major, minor, patch)                                                               \
