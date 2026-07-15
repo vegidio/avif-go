@@ -19,6 +19,7 @@ extern "C" {
 #include <stdint.h>
 #include "EbSvtAv1.h"
 #include <stdlib.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdbool.h>
 /**
@@ -100,17 +101,6 @@ struct EbSvtAv1MasteringDisplayInfo {
     uint32_t                    min_luma;
 };
 
-/************************************************
- * Prediction Structure Config Entry
- *   Contains the basic reference lists and
- *   configurations for each Prediction Structure
- *   Config Entry.
- ************************************************/
-typedef struct PredictionStructureConfigEntry {
-    uint32_t temporal_layer_index;
-    uint32_t decode_order;
-} PredictionStructureConfigEntry;
-
 // super-res modes
 typedef enum {
     SUPERRES_NONE, // No frame superres allowed.
@@ -139,6 +129,10 @@ typedef enum {
     RESIZE_MODES
 } RESIZE_MODE;
 
+/* Indicates what prediction structure to use
+ */
+typedef enum PredStructure { ALL_INTRA, LOW_DELAY, RANDOM_ACCESS, PRED_TOTAL_COUNT, PRED_INVALID = 0xFF } PredStructure;
+
 /** The SvtAv1IntraRefreshType is used to describe the intra refresh type.
 */
 typedef enum SvtAv1IntraRefreshType {
@@ -158,7 +152,7 @@ typedef enum {
  * This structure is able to hold a reference to any fixed size buffer.
  */
 typedef struct SvtAv1FixedBuf {
-    void    *buf; /**< Pointer to the data. Does NOT own the data! */
+    void*    buf; /**< Pointer to the data. Does NOT own the data! */
     uint64_t sz; /**< Length of the buffer, in chars */
 } SvtAv1FixedBuf; /**< alias for struct aom_fixed_buf */
 
@@ -169,23 +163,14 @@ typedef enum EbSFrameMode {
         1, /**< The considered frame will be made into an S-Frame only if it is a base layer inter frame */
     SFRAME_NEAREST_BASE =
         2, /**< If the considered frame is not an altref frame, the next base layer inter frame will be made into an S-Frame */
+    SFRAME_FLEXIBLE_BASE =
+        3, /**< If the considered frame is not an altref frame, modify the miniGOP layers to make the considered frame as an altref frame, then it will be made into an S-Frame */
+    SFRAME_DEC_POSI_BASE =
+        4, /**< If the considered frame in decode order is not an altref frame, modify the mini-GOP structure to promote its previous frame to an altref frame, and set the next altref to an S-Frame */
 } EbSFrameMode;
 
-#if !SVT_AV1_CHECK_VERSION(4, 0, 0) // to be deprecated in v4.0
-/* Do not use the values in SvtAv1PredStructure. Use PredStructure (in definitions.h) instead.
- * SvtAv1PredStructure will be deprecated in v4.0.
- */
-typedef enum SvtAv1PredStructure {
-    SVT_AV1_PRED_LOW_DELAY_P   = 0, // No longer active
-    SVT_AV1_PRED_LOW_DELAY_B   = 1,
-    SVT_AV1_PRED_RANDOM_ACCESS = 2,
-    SVT_AV1_PRED_TOTAL_COUNT   = 3,
-    SVT_AV1_PRED_INVALID       = 0xFF,
-} SvtAv1PredStructure;
-#endif
-
 /* Indicates what rate control mode is used.
- * Currently, cqp is distinguised by setting enable_adaptive_quantization to 0
+ * Currently, cqp is distinguised by setting aq_mode to 0
  */
 typedef enum SvtAv1RcMode {
     SVT_AV1_RC_MODE_CQP_OR_CRF = 0, // constant quantization parameter/constant rate factor
@@ -206,10 +191,18 @@ typedef enum SvtAv1FrameUpdateType {
 
 typedef struct SvtAv1FrameScaleEvts {
     uint32_t  evt_num;
-    uint64_t *start_frame_nums;
-    uint32_t *resize_kf_denoms;
-    uint32_t *resize_denoms;
+    uint64_t* start_frame_nums;
+    uint32_t* resize_kf_denoms;
+    uint32_t* resize_denoms;
 } SvtAv1FrameScaleEvts;
+
+typedef struct SvtAv1SFramePositions {
+    uint32_t  sframe_num;
+    uint64_t* sframe_posis;
+    uint32_t  sframe_qp_num;
+    uint8_t*  sframe_qps;
+    int8_t*   sframe_qp_offsets;
+} SvtAv1SFramePositions;
 
 // Will contain the EbEncApi which will live in the EncHandle class
 // Only modifiable during config-time.
@@ -267,7 +260,7 @@ typedef struct EbSvtAv1EncConfiguration {
      * Refer to PredStructure enum for valid values.
      *
      * Default is RANDOM_ACCESS. */
-    uint8_t pred_structure;
+    PredStructure pred_structure;
 
     // Input Info
 
@@ -560,9 +553,12 @@ typedef struct EbSvtAv1EncConfiguration {
     /**
      * @brief Deblocking loop filter control
      *
-     * Default is true.
+     * 0: disabled
+     * 1: enabled
+     * 2: more accurate (slower)
      */
-    bool enable_dlf_flag;
+    uint8_t enable_dlf_flag;
+
     /* Film grain denoising the input picture
     * Flag to enable the denoising
     *
@@ -615,12 +611,6 @@ typedef struct EbSvtAv1EncConfiguration {
      * Default depends on rate control mode.*/
     uint32_t look_ahead_distance;
 
-    /* Enable TPL in look ahead
-     * 0 = disable TPL in look ahead
-     * 1 = enable TPL in look ahead
-     * Default is 0  */
-    uint8_t enable_tpl_la;
-
     /* recode_loop indicates the recode levels,
      * DISALLOW_RECODE = 0, No recode.
      * ALLOW_RECODE_KFMAXBW = 1, Allow recode for KF and exceeding maximum frame bandwidth.
@@ -637,11 +627,13 @@ typedef struct EbSvtAv1EncConfiguration {
     * Default is 0. */
     uint32_t screen_content_mode;
 
-    /* Enable adaptive quantization within a frame using segmentation.
+    /* Adaptive quantization used within a frame.
      *
-     * For rate control mode 0, setting this to 0 will use CQP mode, else CRF mode will be used.
-     * Default is 2. */
-    uint8_t enable_adaptive_quantization;
+     * For rc_mode 0, setting this to:
+     * 0: use CQP mode
+     * 1: variance-based segmentation
+     * 2: CRF (per-frame QPs and per-SB delta-QPs derived using TPL) */
+    uint8_t aq_mode;
 
     /**
      * @brief Enable use of ALT-REF (temporally filtered) frames.
@@ -653,7 +645,7 @@ typedef struct EbSvtAv1EncConfiguration {
 
     bool enable_overlays;
     /**
-     * @brief Tune for a particular metric; 0: VQ, 1: PSNR, 2: SSIM.
+     * @brief Tune for a particular metric; 0: VQ, 1: PSNR, 2: SSIM, 3: IQ (Image Quality), 4: MS-SSIM.
      *
      * Default is 1.
      */
@@ -681,30 +673,12 @@ typedef struct EbSvtAv1EncConfiguration {
     * values are from EbSFrameMode
     * SFRAME_STRICT_ARF: the considered frame will be made into an S-Frame only if it is an altref frame
     * SFRAME_NEAREST_ARF: if the considered frame is not an altref frame, the next altref frame will be made into an S-Frame
+    * SFRAME_FLEXIBLE_ARF: if the considered frame is not an altref frame, modify the mini-GOP structure to promote it to an altref frame
+    * SFRAME_DEC_POSI: if the considered frame in decode order is not an altref frame, modify the mini-GOP structure to promote its previous frame to an altref frame, and set the next altref to an S-Frame
     */
     EbSFrameMode sframe_mode;
 
     // End of individual tuning flags
-
-    // Application Specific parameters
-
-    /**
-     * @brief API signal for the library to know the channel ID (used for pinning to cores).
-     *
-     * Min value is 0.
-     * Max value is 0xFFFFFFFF.
-     * Default is 0.
-     */
-    uint32_t channel_id;
-
-    /**
-     * @brief API signal for the library to know the active number of channels being encoded simultaneously.
-     *
-     * Min value is 1.
-     * Max value is 0xFFFFFFFF.
-     * Default is 1.
-     */
-    uint32_t active_channel_count;
 
     // Threads management
 
@@ -715,22 +689,6 @@ typedef struct EbSvtAv1EncConfiguration {
      * will map to the highest level.
      */
     uint32_t level_of_parallelism;
-
-    /* Pin the execution of threads to the first N logical processors.
-     * 0: unpinned
-     * N: Pin threads to socket's first N processors
-     * default 0 */
-    uint32_t pin_threads;
-
-    /* Target socket to run on. For dual socket systems, this can specify which
-     * socket the encoder runs on.
-     *
-     * -1 = Both Sockets.
-     *  0 = Socket 0.
-     *  1 = Socket 1.
-     *
-     * Default is -1. */
-    int32_t target_socket;
 
     /* CPU FLAGS to limit assembly instruction set used by encoder.
     * Default is EB_CPU_FLAGS_ALL. */
@@ -875,14 +833,14 @@ typedef struct EbSvtAv1EncConfiguration {
     uint8_t tf_strength;
 
     /* Stores the optional film grain synthesis info */
-    AomFilmGrain *fgs_table;
+    AomFilmGrain* fgs_table;
 
     /* New parameters can go in under this line. Also deduct the size of the parameter */
     /* from the padding array */
 
-    /* Variance boost
-     * false = disable variance boost
-     * true = enable variance boost
+    /* Variance Boost
+     * false = disable Variance Boost
+     * true = enable Variance Boost
      * Default is false. */
     bool enable_variance_boost;
     /* @brief Selects the curve strength to boost low variance regions according to a fast-growing formula
@@ -894,7 +852,7 @@ typedef struct EbSvtAv1EncConfiguration {
      *  1: 1st octile
      *  4: 4th octile
      *  8: 8th octile
-     *  Default is 6 */
+     *  Default is 5 */
     uint8_t variance_octile;
 
     /* @brief Bias towards decreased/increased sharpness in the deblocking loop filter & during rate distortion
@@ -951,10 +909,66 @@ typedef struct EbSvtAv1EncConfiguration {
      * Default is false.
      */
     bool rtc;
+
+    /* @brief compresses the QP hierarchical layer scale to improve temporal video consistency
+    * 0: no compression, original SVT-AV1 scaling
+    * 1-3: enable compression, the higher the number the stronger the compression
+    *      (different frame quality fluctuation/mean quality tradeoffs)
+    * Default is 1
+    */
+    uint8_t qp_scale_compress_strength;
+
+    /* @brief Indicates where to insert an S-Frame, only available when sframe_mode is SFRAME_FLEXIBLE_ARF */
+    SvtAv1SFramePositions sframe_posi;
+
+    /* @brief Indicates QP of S-Frame(s) */
+    uint8_t sframe_qp;
+    /* @brief Indicates QP offset of S-Frame(s) */
+    int8_t sframe_qp_offset;
+
+    /**
+     * @brief Toggle default film grain blocksize behavior
+     * 0: use default blocksize behavior (32x32)
+     * 1: use adaptive blocksize based on resolution
+     *  - 8x8 for <4k
+     *  - 16x16 for 4k
+     * Default is 1
+     */
+    bool adaptive_film_grain;
+
+    /* @brief Limit transform sizes to the specified size
+     * 32: use transform sizes up to 32x32 pixels
+     * 64: use transform sizes up to 64x64 pixels
+     * Default is 64
+     * Note: Setting the max transform size to 32 can be useful under some circumstances (e.g. still image coding),
+     * as it's the largest transform where all coefficients can be coded into the bitstream.
+     * In AV1, the transform size of 64 drops the highest 32 AC coefficients by design, effectively zeroing them upon
+     * decoding, which can cause certain visual features to look blurry.
+     * Forcing smaller tx sizes (i.e. 16, 8, 4) doesn't hold an inherent visual quality advantage over 32, so those
+     * aren't exposed as options.
+     */
+    uint8_t max_tx_size;
+
+    /* @brief qindex offset for extended CRF support
+     * Value is internally determined by CRF parameter value, each quarter-step increment to the CRF adds 1 to the
+     * offset, with a maximum of 3 (i.e. three quarter-step increments) for fractional CRFs below 63, and up to
+     * 28 for the extended CRF range (63.25 to 70)
+     * Default is 0 if CRF is an integer
+     */
+    uint8_t extended_crf_qindex_offset;
+
+    /**
+     * @brief Strength of the internal RD metric to bias toward high-frequency error (helps with texture preservation and film grain retention)
+     * 0.00: disable AC bias
+     * 1.00: enable AC bias with a strength of 1.00
+     * Default is 0.00.
+     */
+    double ac_bias;
+
     // clang-format off
-    /*Add 128 Byte Padding to Struct to avoid changing the size of the public configuration struct*/
-    uint8_t padding[128 - (sizeof(uint8_t) * 2)
-        - sizeof(bool)
+    /* Add 128 Byte Padding to Struct to avoid changing the size of the public configuration struct */
+    uint8_t padding[128
+        - sizeof(PredStructure) + sizeof (uint8_t) // pred_strucutre type was changed from uint8_t to PredStructure
     ];
     // clang-format on
 } EbSvtAv1EncConfiguration;
@@ -963,13 +977,54 @@ typedef struct EbSvtAv1EncConfiguration {
  * Returns a string containing "v$tag-$commit_count-g$hash${dirty:+-dirty}"
  * @param[out] SVT_AV1_CVS_VERSION
  */
-EB_API const char *svt_av1_get_version(void);
+EB_API const char* svt_av1_get_version(void);
 
 /**
  * Prints the version header and build information to the file
  * specified by the SVT_LOG_FILE environment variable or stderr
  */
 EB_API void svt_av1_print_version(void);
+
+/**
+ * @brief Log levels
+ *
+ * Defines the severity levels for logging messages.
+ */
+typedef enum {
+    SVT_AV1_LOG_ALL   = -1, /**< Log all messages */
+    SVT_AV1_LOG_FATAL = 0, /**< Fatal errors */
+    SVT_AV1_LOG_ERROR = 1, /**< Errors */
+    SVT_AV1_LOG_WARN  = 2, /**< Warnings */
+    SVT_AV1_LOG_INFO  = 3, /**< Informational messages */
+    SVT_AV1_LOG_DEBUG = 4, /**< Debug messages */
+} SvtAv1LogLevel;
+
+/**
+ * @brief Log callback function signature
+ *
+ * Applications can register a callback to intercept log messages from the encoder.
+ *
+ * @param[in] level   Severity level of the log message
+ * @param[in] context Opaque user-provided context pointer (may be NULL)
+ * @param[in] tag     Optional log tag (may be NULL)
+ * @param[in] fmt     printf-style format string
+ * @param[in] args    Variable argument list corresponding to the format string
+ */
+typedef void (*SvtAv1LogCallback)(void* context, SvtAv1LogLevel level, const char* tag, const char* fmt, va_list args);
+
+/**
+ * Register a callback for intercepting log messages.
+ *
+ * Applications can use this function to redirect log output to custom handlers. When a callback is registered, all log
+ * messages will be dispatched to the callback instead of the default stderr/file output. This will affect all
+ * instances and is a global setting. This should be called before svt_av1_enc_init_handle() as any calls to
+ * svt_av1_enc_init_handle() will finalize logging.
+ *
+ * @param[in] callback  Callback function pointer. Has no effect if NULL.
+ * @param[in] context   Opaque context pointer passed back to the callback. Typically application state or logging context.
+ *                      Ignored if callback is NULL.
+ */
+EB_API void svt_av1_set_log_callback(SvtAv1LogCallback callback, void* context);
 
 /* STEP 1: Call the library to construct a Component Handle.
      *
@@ -980,8 +1035,8 @@ EB_API void svt_av1_print_version(void);
      * @ *config_ptr     Pointer passed back to the client during callbacks, it will be
      *                  loaded with default params from the library. */
 EB_API EbErrorType svt_av1_enc_init_handle(
-    EbComponentType         **p_handle,
-    EbSvtAv1EncConfiguration *config_ptr); // config_ptr will be loaded with default params from the library
+    EbComponentType**         p_handle,
+    EbSvtAv1EncConfiguration* config_ptr); // config_ptr will be loaded with default params from the library
 
 /* STEP 2: Set all configuration parameters.
      *
@@ -989,9 +1044,9 @@ EB_API EbErrorType svt_av1_enc_init_handle(
      * @ *svt_enc_component              Encoder handler.
      * @ *pComponentParameterStructure  Encoder and buffer configurations will be copied to the library. */
 EB_API EbErrorType svt_av1_enc_set_parameter(
-    EbComponentType *svt_enc_component,
-    EbSvtAv1EncConfiguration
-        *pComponentParameterStructure); // pComponentParameterStructure contents will be copied to the library
+    EbComponentType* svt_enc_component,
+    EbSvtAv1EncConfiguration*
+        pComponentParameterStructure); // pComponentParameterStructure contents will be copied to the library
 
 /* OPTIONAL: Set a single configuration parameter.
      *
@@ -999,35 +1054,35 @@ EB_API EbErrorType svt_av1_enc_set_parameter(
      * @ *pComponentParameterStructure  Encoder parameters structure.
      * @ *name                          Null terminated string containing the parameter name
      * @ *value                         Null terminated string containing the parameter value */
-EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration *pComponentParameterStructure, const char *name,
-                                               const char *value);
+EB_API EbErrorType svt_av1_enc_parse_parameter(EbSvtAv1EncConfiguration* pComponentParameterStructure, const char* name,
+                                               const char* value);
 
 /* STEP 3: Initialize encoder and allocates memory to necessary buffers.
      *
      * Parameter:
      * @ *svt_enc_component  Encoder handler. */
-EB_API EbErrorType svt_av1_enc_init(EbComponentType *svt_enc_component);
+EB_API EbErrorType svt_av1_enc_init(EbComponentType* svt_enc_component);
 
 /* OPTIONAL: Get stream headers at init time.
      *
      * Parameter:
      * @ *svt_enc_component   Encoder handler.
      * @ **output_stream_ptr  Output buffer. */
-EB_API EbErrorType svt_av1_enc_stream_header(EbComponentType     *svt_enc_component,
-                                             EbBufferHeaderType **output_stream_ptr);
+EB_API EbErrorType svt_av1_enc_stream_header(EbComponentType*     svt_enc_component,
+                                             EbBufferHeaderType** output_stream_ptr);
 
 /* OPTIONAL: Release stream headers at init time.
      *
      * Parameter:
      * @ *stream_header_ptr  stream header buffer. */
-EB_API EbErrorType svt_av1_enc_stream_header_release(EbBufferHeaderType *stream_header_ptr);
+EB_API EbErrorType svt_av1_enc_stream_header_release(EbBufferHeaderType* stream_header_ptr);
 
 /* STEP 4: Send the picture.
      *
      * Parameter:
      * @ *svt_enc_component  Encoder handler.
      * @ *p_buffer           Header pointer, picture buffer. */
-EB_API EbErrorType svt_av1_enc_send_picture(EbComponentType *svt_enc_component, EbBufferHeaderType *p_buffer);
+EB_API EbErrorType svt_av1_enc_send_picture(EbComponentType* svt_enc_component, EbBufferHeaderType* p_buffer);
 
 /**
  * @brief Step 5: Receive packet.
@@ -1039,21 +1094,21 @@ EB_API EbErrorType svt_av1_enc_send_picture(EbComponentType *svt_enc_component, 
  * @param pic_send_done Flag to signal that all input pictures have been sent. Should be either 0 or 1.
  * @return EB_API Either EB_ErrorMax for an encode error or EB_NoErrorEmptyQueue if there are no available packets.
  */
-EB_API EbErrorType svt_av1_enc_get_packet(EbComponentType *svt_enc_component, EbBufferHeaderType **p_buffer,
+EB_API EbErrorType svt_av1_enc_get_packet(EbComponentType* svt_enc_component, EbBufferHeaderType** p_buffer,
                                           uint8_t pic_send_done);
 
 /* STEP 5-1: Release output buffer back into the pool.
      *
      * Parameter:
      * @ **p_buffer          Header pointer that contains the output packet to be released. */
-EB_API void svt_av1_enc_release_out_buffer(EbBufferHeaderType **p_buffer);
+EB_API void svt_av1_enc_release_out_buffer(EbBufferHeaderType** p_buffer);
 
 /* OPTIONAL: Fill buffer with reconstructed picture.
      *
      * Parameter:
      * @ *svt_enc_component  Encoder handler.
      * @ *p_buffer           Output buffer. */
-EB_API EbErrorType svt_av1_get_recon(EbComponentType *svt_enc_component, EbBufferHeaderType *p_buffer);
+EB_API EbErrorType svt_av1_get_recon(EbComponentType* svt_enc_component, EbBufferHeaderType* p_buffer);
 
 /* OPTIONAL: get stream information
      *
@@ -1061,19 +1116,19 @@ EB_API EbErrorType svt_av1_get_recon(EbComponentType *svt_enc_component, EbBuffe
      * @ *svt_enc_component  Encoder handler.
      * @ *stream_info_id SVT_AV1_STREAM_INFO_ID.
      * @ *info         output, the type depends on id */
-EB_API EbErrorType svt_av1_enc_get_stream_info(EbComponentType *svt_enc_component, uint32_t stream_info_id, void *info);
+EB_API EbErrorType svt_av1_enc_get_stream_info(EbComponentType* svt_enc_component, uint32_t stream_info_id, void* info);
 
 /* STEP 6: Deinitialize encoder library.
      *
      * Parameter:
      * @ *svt_enc_component  Encoder handler. */
-EB_API EbErrorType svt_av1_enc_deinit(EbComponentType *svt_enc_component);
+EB_API EbErrorType svt_av1_enc_deinit(EbComponentType* svt_enc_component);
 
 /* STEP 7: Deconstruct encoder handler.
      *
      * Parameter:
      * @ *svt_enc_component  Encoder handler. */
-EB_API EbErrorType svt_av1_enc_deinit_handle(EbComponentType *svt_enc_component);
+EB_API EbErrorType svt_av1_enc_deinit_handle(EbComponentType* svt_enc_component);
 
 #ifdef __cplusplus
 }

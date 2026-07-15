@@ -34,9 +34,7 @@
 extern "C" {
 #endif // __cplusplus
 
-#define FIX_TUNE_SSIM               1 // Fix SSIM mode
 //FOR DEBUGGING - Do not remove
-#define OPT_LD_LATENCY2         1 // Latency optimization for low delay - to keep the Macro for backwards testing until 3.0
 #define LOG_ENC_DONE            0 // log encoder job one
 #define DEBUG_TPL               0 // Prints to debug TPL
 #define DETAILED_FRAME_OUTPUT   0 // Prints detailed frame output from the library for debugging
@@ -50,9 +48,11 @@ extern "C" {
 #define RC_NO_R2R               0 // This is a debugging flag for RC and makes encoder to run with no R2R in RC mode
                                   // Note that the speed might impacted significantly
 #if !RC_NO_R2R
-#define FTR_KF_ON_FLY_SAMPLE      0 // Sample code to signal KF
-#define FTR_RES_ON_FLY_SAMPLE     0 // Sample functions to change the resolution on the fly
-#define FTR_RATE_ON_FLY_SAMPLE     0 // Sample functions to change bit rate
+#define FTR_KF_ON_FLY_SAMPLE         0 // Sample code to signal KF
+#define FTR_RES_ON_FLY_SAMPLE        0 // Sample functions to change the resolution on the fly
+#define FTR_RATE_ON_FLY_SAMPLE       0 // Sample functions to change bit rate
+#define FTR_FRAME_RATE_ON_FLY_SAMPLE 0 // Sample functions to change frame rate
+#define FTR_PER_FRAME_QUALITY_SAMPLE 0 // Sample functions to compute PSNR per frame
 #endif
 // Super-resolution debugging code
 #define DEBUG_SCALING           0
@@ -64,10 +64,16 @@ extern "C" {
 // Switch frame debugging code
 #define DEBUG_SFRAME            0
 
-// Variance boost debugging code
+// Variance Boost debugging code
 #define DEBUG_VAR_BOOST         0
 #define DEBUG_VAR_BOOST_QP      0
 #define DEBUG_VAR_BOOST_STATS   0
+
+// Anti-alias aware screen content mode debugging code
+#define DEBUG_AA_SCM            0
+
+// QP scaling debugging code
+#define DEBUG_QP_SCALING        0
 
 // Quantization matrices
 #define DEBUG_QM_LEVEL          0
