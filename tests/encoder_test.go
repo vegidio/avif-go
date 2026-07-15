@@ -9,6 +9,7 @@ import (
 	"image/gif"
 	_ "image/jpeg" // Register JPEG format
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -289,6 +290,40 @@ func TestEncodeAll_WithRealGIF(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, buf.Bytes())
 	t.Logf("Encoded %d frames to %d bytes", len(frames), buf.Len())
+}
+
+// TestEncode_Concurrent guards against the SVT-AV1 thread-safety regression reported in
+// https://github.com/vegidio/avif-go/issues/6. Older SVT-AV1 versions kept block-geometry
+// tables in process-global state, so encoding from multiple goroutines at once raced and
+// crashed with a SIGSEGV inside avifEncoderAddImageGrid. SVT-AV1 4.1.0 moved that state
+// per-instance and added mutexes; this test encodes concurrently, without any mutex, to
+// verify the crash no longer happens.
+func TestEncode_Concurrent(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	const goroutines = 16
+
+	var wg sync.WaitGroup
+	errs := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			buf := &bytes.Buffer{}
+			opt := &avif.Options{Speed: 4, AlphaQuality: 60, ColorQuality: 60}
+			if err := avif.Encode(buf, img, opt); err != nil {
+				errs <- err
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
 }
 
 // errorWriter is a helper type that always returns an error on Write
